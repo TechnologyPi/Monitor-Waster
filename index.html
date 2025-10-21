@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Weather Dashboard</title>
+<style>
+  :root{
+    --bg: #0f1221;
+    --fg: #eaeef7;
+    --muted: #a8b0c7;
+    --accent: #68c1ff;
+    --accent2: #ffd166;
+    --danger: #ff6b6b;
+    --card: #161a2e;
+    --glass: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.12);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    margin: 0;
+  }
+
+  /* Weather stage */
+  .stage {
+    position: fixed; inset: 0; overflow: hidden; z-index: 0;
+    background: linear-gradient(160deg, #0b0f1f 0%, #151a32 100%);
+    transition: background 600ms ease;
+  }
+  .theme-sunny { background: linear-gradient(160deg, #2b66e3 0%, #8bc6ff 100%); }
+  .sun {
+    position: absolute; top: 8%; right: 10%;
+    width: 180px; height: 180px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #fff8b8, #ffd166 60%, rgba(255,209,102,0.0) 70%);
+    filter: blur(0.3px);
+    animation: pulse 6s ease-in-out infinite; opacity: 0.9; pointer-events: none;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.04);} }
+
+  .clouds { position: absolute; inset: 0; pointer-events:none; }
+  .cloud {
+    position: absolute; width: 220px; height: 80px; border-radius: 40px;
+    background: rgba(255,255,255,0.18); filter: blur(1px);
+  }
+  .cloud::before, .cloud::after { content:""; position:absolute; background:inherit; border-radius:50%; }
+  .cloud::before { width: 120px; height: 120px; left: 20px; top:-50px; }
+  .cloud::after  { width: 150px; height: 150px; left: 90px; top:-70px; }
+  .cloud.move { animation: drift linear infinite; }
+  @keyframes drift { 0% { transform: translateX(-30vw); } 100% { transform: translateX(130vw); } }
+
+  .rain-layer { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+  .drop {
+    position:absolute; width: 2px; height: 14px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.0), rgba(255,255,255,0.35));
+    animation: fall linear infinite; filter: blur(0.2px);
+  }
+  @keyframes fall { 0% { transform: translateY(-120px);} 100% { transform: translateY(110vh);} }
+
+  .flake {
+    position:absolute; width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.85); box-shadow: 0 0 8px rgba(255,255,255,0.25);
+    animation: snow linear infinite;
+  }
+  @keyframes snow {
+    0% { transform: translateY(-10vh) translateX(0); opacity:0.9; }
+    100% { transform: translateY(110vh) translateX(40px); opacity:0.95;}
+  }
+
+  /* Layout */
+  .wrap { position: relative; z-index: 1; padding: 20px; }
+  .grid {
+    display: grid; grid-template-columns: 1.2fr 1fr 1fr;
+    grid-auto-rows: minmax(120px, auto); gap: 16px;
+  }
+  .card {
+    background: linear-gradient(180deg, var(--glass), rgba(255,255,255,0.03));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; backdrop-filter: blur(8px);
+  }
+  .title { font-weight: 700; letter-spacing: 0.2px; color: var(--muted); margin-bottom: 10px; }
+  .large { font-size: 1.15rem; grid-column: span 2; }
+  .medium { font-size: 1rem; }
+  .small { font-size: 0.95rem; }
+
+  #clock { display:flex; align-items:center; justify-content:space-between; gap: 16px; }
+  #clock .time { font-size: clamp(42px, 7vw, 86px); font-weight: 800; letter-spacing: 1px; }
+  #clock .date { color: var(--muted); font-weight: 600; }
+
+  #weather .summary { display:flex; align-items:center; gap:12px; }
+  #weather .temp { font-size: 32px; font-weight: 800; }
+  #weather .desc { color: var(--muted); text-transform: capitalize; }
+
+  #stats .kvs { display:grid; grid-template-columns: repeat(3,1fr); gap:10px; }
+  .kv { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding:10px; }
+  .kv .k { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .kv .v { font-weight: 800; font-size: 18px; margin-top: 4px; }
+
+  #calendar .cal-grid { display:grid; grid-template-columns: repeat(7,1fr); gap:6px; margin-top: 8px; }
+  .dow { color: var(--muted); font-weight: 700; font-size: 12px; text-align:center; }
+  .day { text-align:center; padding:8px 0; border-radius: 8px; border:1px solid transparent; }
+  .day.today { background: rgba(255,255,255,0.08); border-color: var(--border); font-weight: 800; }
+
+  #reminders textarea {
+    width:100%; height: 280px; resize: vertical;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03); color: var(--fg);
+    padding: 10px; font-size: 15px; line-height: 1.4;
+  }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+  .row input, .row select, .row button {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--fg);
+    padding: 8px 10px; border-radius: 10px; font-weight: 600;
+  }
+  .row button.primary { background: var(--accent); color: #0b0f1f; border-color: transparent; }
+
+  /* Settings tray */
+  .settings {
+    position: fixed; right: 16px; bottom: 16px; z-index: 2;
+    background: linear-gradient(180deg, var(--glass), rgba(255,255,255,0.03));
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px; width: 340px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+  }
+  .settings h4 { margin: 0 0 8px 0; color: var(--muted);}
+  .settings .field { display:flex; flex-direction:column; gap:4px; margin-bottom:8px;}
+  .hint { font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; }
+    .large { grid-column: span 1; }
+  }
+</style>
+</head>
+<body>
+  <div id="stage" class="stage">
+    <div id="sun" class="sun" style="display:none;"></div>
+    <div id="clouds" class="clouds"></div>
+    <div id="rain" class="rain-layer"></div>
+    <div id="snow" class="rain-layer"></div>
+  </div>
+
+  <div class="wrap">
+    <div class="grid">
+      <div id="clock" class="card large">
+        <div>
+          <div class="title">Cl3ock</div>
+          <div class="time" id="timeText">--:--</div>
+          <div class="date" id="dateText">Loading date…</div>
+        </div>
+        <div id="weather" class="medium">
+          <div class="title">Weather</div>
+          <div class="summary">
+            <div class="temp" id="tempText">--°</div>
+            <div>
+              <div class="desc" id="descText">—</div>
+              <div class="muted" id="cityText">City</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="stats" class="card small">
+        <div class="title">System</div>
+        <div class="kvs">
+          <div class="kv"><div class="k">CPU (approx)</div><div class="v" id="cpuText">—</div></div>
+          <div class="kv"><div class="k">RAM</div><div class="v" id="ramText">—</div></div>
+          <div class="kv"><div class="k">GPU</div><div class="v" id="gpuText">—</div></div>
+        </div>
+        <div class="hint" style="margin-top:8px;">Browser-based estimates....</div>
+      </div>
+
+      <div id="calendar" class="card medium">
+        <div class="title">Calendar</div>
+        <div class="muted" id="monthLabel">—</div>
+        <div id="calGrid" class="cal-grid"></div>
+      </div>
+
+      <div id="reminders" class="card large">
+        <div class="title">Personal reminders</div>
+        <div class="row" style="margin-bottom:8px;">
+          <input type="file" id="remFile" accept=".txt" />
+          <button id="saveRem" class="primary">Save</button>
+          <button id="clearRem">Clear</button>
+          <span class="hint">Load .txt (one item per line). Saved locally.</span>
+        </div>
+        <textarea id="remText" placeholder="- item 1
+- item 2
+- item 3 (you get the point right?)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings">
+    <h4>Settings</h4>
+    <div class="field">
+      <label>City</label>
+      <input id="owmCity" placeholder="e.g., London" />
+    </div>
+    <div class="row">
+      <button id="applyWeather" class="primary">Apply Weather</button>
+    </div>
+    <div class="hint">Powered by local Flask + Open-Meteo. Updates every 15 minutes.</div>
+  </div>
+
+<script>
+/* ---------- Utilities ---------- */
+const $ = (s) => document.querySelector(s);
+const clamp = (n,min,max) => Math.max(min, Math.min(max, n));
+
+/* ---------- Clock ---------- */
+function updateClock(){
+  const now = new Date();
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+  const date = now.toLocaleDateString([], { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  $('#timeText').textContent = time;
+  $('#dateText').textContent = date;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ---------- Calendar ---------- */
+function buildCalendar(d=new Date()){
+  const monthLabel = d.toLocaleDateString([], { month:'long', year:'numeric' });
+  $('#monthLabel').textContent = monthLabel;
+
+  const grid = $('#calGrid');
+  grid.innerHTML = '';
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  for(const w of dows){
+    const el = document.createElement('div');
+    el.className = 'dow';
+    el.textContent = w;
+    grid.appendChild(el);
+  }
+
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const first = new Date(year, month, 1);
+  const start = first.getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const today = new Date();
+
+  for(let i=0;i<start;i++){
+    const pad = document.createElement('div'); pad.className = 'day muted'; pad.textContent = '';
+    grid.appendChild(pad);
+  }
+  for(let day=1; day<=daysInMonth; day++){
+    const el = document.createElement('div');
+    el.className = 'day';
+    if(day===today.getDate() && month===today.getMonth() && year===today.getFullYear()){
+      el.classList.add('today');
+    }
+    el.textContent = day;
+    grid.appendChild(el);
+  }
+}
+buildCalendar();
+
+/* ---------- System stats (best-effort) ---------- */
+function getGPUInfo(){
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if(!gl) return 'Unavailable';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    return renderer || 'Unknown';
+  } catch(e){ return 'Unavailable'; }
+}
+function getRAMInfo(){
+  const devMem = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : '—';
+  let heap = '—';
+  if (performance && performance.memory){
+    const used = performance.memory.usedJSHeapSize / (1024*1024);
+    const total = performance.memory.jsHeapSizeLimit / (1024*1024);
+    heap = `${used.toFixed(0)} / ${total.toFixed(0)} MB`;
+  }
+  return { devMem, heap };
+}
+// CPU proxy: event-loop lag
+let lastTick = performance.now();
+let lagSamples = [];
+setInterval(() => {
+  const now = performance.now();
+  const delta = now - lastTick; // expected ~100ms
+  lastTick = now;
+  const lag = Math.max(0, delta - 100);
+  lagSamples.push(lag);
+  if (lagSamples.length > 20) lagSamples.shift();
+  const avgLag = lagSamples.reduce((a,b)=>a+b,0) / lagSamples.length;
+  const load = clamp((avgLag/50)*100, 1, 100);
+  $('#cpuText').textContent = `${load.toFixed(0)}%`;
+}, 100);
+(function initStats(){
+  const gpu = getGPUInfo();
+  const {devMem, heap} = getRAMInfo();
+  $('#gpuText').textContent = gpu.length>28 ? gpu.slice(0,25)+'…' : gpu;
+  $('#ramText').textContent = heap !== '—' ? heap : devMem;
+})();
+
+/* ---------- Weather FX ---------- */
+const stage = $('#stage');
+const sunEl = $('#sun');
+const cloudsEl = $('#clouds');
+const rainEl = $('#rain');
+const snowEl = $('#snow');
+
+function clearWeatherFX(){
+  sunEl.style.display = 'none';
+  cloudsEl.innerHTML = '';
+  rainEl.innerHTML = '';
+  snowEl.innerHTML = '';
+  stage.classList.remove('theme-sunny');
+}
+function makeCloud(y, dur=60){
+  const c = document.createElement('div');
+  c.className = 'cloud move';
+  c.style.top = y + 'vh';
+  c.style.left = (-30 + Math.random()*20) + 'vw';
+  c.style.opacity = String(0.25 + Math.random()*0.35);
+  c.style.filter = 'blur(' + (0.5 + Math.random()*1.5) + 'px)';
+  c.style.animationDuration = (dur + Math.random()*20) + 's';
+  cloudsEl.appendChild(c);
+}
+function makeRain(count=160){
+  const w = window.innerWidth;
+  for (let i=0;i<count;i++){
+    const d = document.createElement('div');
+    d.className = 'drop';
+    d.style.left = (Math.random()*w) + 'px';
+    d.style.top = (-100 - Math.random()*400) + 'px';
+    d.style.animationDuration = (0.6 + Math.random()*0.8) + 's';
+    d.style.animationDelay = (Math.random()*1.2) + 's';
+    rainEl.appendChild(d);
+  }
+}
+function makeSnow(count=80){
+  const w = window.innerWidth;
+  for (let i=0;i<count;i++){
+    const f = document.createElement('div');
+    f.className = 'flake';
+    f.style.left = (Math.random()*w) + 'px';
+    f.style.animationDuration = (6 + Math.random()*6) + 's';
+    f.style.animationDelay = (Math.random()*3) + 's';
+    snowEl.appendChild(f);
+  }
+}
+function applyWeatherTheme(code, main){
+  clearWeatherFX();
+  const m = (main || '').toLowerCase();
+  if (m.includes('rain')){ for (let i=0;i<4;i++) makeCloud(10 + i*14, 50); makeRain(200); }
+  else if (m.includes('snow')){ for (let i=0;i<5;i++) makeCloud(8 + i*12, 70); makeSnow(130); }
+  else if (m.includes('clear')){ stage.classList.add('theme-sunny'); sunEl.style.display = 'block'; for (let i=0;i<2;i++) makeCloud(18 + i*20, 80); }
+  else { for (let i=0;i<6;i++) makeCloud(6 + i*12, 65); }
+}
+
+/* ---------- Weather (Open-Meteo Flask backend) ---------- */
+async function fetchWeatherByCity(city){
+  const res = await fetch(`/weather?city=${encodeURIComponent(city)}`);
+  if(!res.ok) throw new Error('Weather error');
+  return res.json();
+}
+
+async function updateWeather(){
+  const city = $('#owmCity').value.trim();
+  try {
+    const data = city
+      ? await fetchWeatherByCity(city)
+      : (window.__geo ? await fetchWeatherByGeo(window.__geo.lat, window.__geo.lon)
+                      : await fetchWeatherByCity('Toronto')); // default fallback
+
+    const temp = Math.round(data.main.temp);
+    const desc = data.weather[0].description;
+    const code = data.weather[0].id;
+    const name = data.name;
+
+    $('#tempText').textContent = `${temp}°`;
+    $('#descText').textContent = desc;
+    $('#cityText').textContent = name;
+
+    applyWeatherTheme(code, data.weather[0].main);
+  } catch (e){
+    $('#descText').textContent = 'Weather unavailable';
+  }
+}
+
+$('#applyWeather').addEventListener('click', () => { updateWeather(); saveSettings(); });
+$('#geoBtn').addEventListener('click', () => {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { window.__geo = { lat: pos.coords.latitude, lon: pos.coords.longitude }; updateWeather(); saveSettings(); },
+    () => alert('Geolocation permission denied.')
+  );
+});
+setInterval(updateWeather, 15*60*1000);
+
+/* ---------- Reminders ---------- */
+function loadReminders(){
+  const stored = localStorage.getItem('remindersText');
+  if(stored!==null) $('#remText').value = stored;
+}
+function saveReminders(){
+  localStorage.setItem('remindersText', $('#remText').value);
+}
+$('#saveRem').addEventListener('click', saveReminders);
+$('#clearRem').addEventListener('click', () => { $('#remText').value=''; saveReminders(); });
+$('#remFile').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    $('#remText').value = reader.result;
+    saveReminders();
+  };
+  reader.readAsText(f);
+});
+loadReminders();
+
+/* ---------- Persist minimal settings ---------- */
+function saveSettings(){
+  const data = {
+    city: $('#owmCity').value.trim(),
+    geo: window.__geo || null
+  };
+  localStorage.setItem('dashboardSettings', JSON.stringify(data));
+}
+function loadSettings(){
+  const s = localStorage.getItem('dashboardSettings');
+  if(!s) return;
+  try {
+    const data = JSON.parse(s);
+    if(data.city) $('#owmCity').value = data.city;
+    if(data.geo) window.__geo = data.geo;
+  } catch {}
+}
+window.addEventListener('beforeunload', saveSettings);
+loadSettings();
+updateWeather();
+</script>
+</body>
+</html>
